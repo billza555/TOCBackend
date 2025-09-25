@@ -81,7 +81,7 @@ def download_csv(
     filename = "songs.csv"
     with open(filename, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
-        writer.writerow(["Song", "Artist", "Lyrics", "Chord Image URL"])
+        writer.writerow(["Song", "Singer", "Lyrics", "Chord Image URL"])
         for s in songs_page:
             writer.writerow([s.song, s.singer, s.lyrics, s.chord_image])
     
