@@ -11,6 +11,9 @@ from shared.http_client import fetch_page
 from .models import Song
 
 class SongService:
+    def __init__(self):
+        self._songs_cache: List[Song] = []
+        self._singers: set[str] = set()
     
     @staticmethod
     def fetch_lyrics_and_chord_image(song_url: str) -> Tuple[str, str]:
@@ -39,8 +42,7 @@ class SongService:
         
         return lyrics, chord_image_url
     
-    @staticmethod
-    def extract_songs(html: str) -> List[Tuple[str, str, str]]:
+    def extract_songs(self, html: str) -> List[Tuple[str, str, str]]:
         """Extract song data from page HTML"""
         section_match = SECTION_PATTERN.search(html)
         if not section_match:
@@ -59,26 +61,23 @@ class SongService:
             if h3_match:
                 h3_text = WHITESPACE_PATTERN.sub(' ', h3_match.group(1)).strip()
                 if ' - ' in h3_text:
-                    song_name, artist_name = h3_text.split(' - ', 1)
+                    song_name, singer_name = h3_text.split(' - ', 1)
                 else:
-                    song_name, artist_name = h3_text, ''
-                songs.append((href, song_name.strip(), artist_name.strip()))
-        
+                    song_name, singer_name = h3_text, ''
+                songs.append((href, song_name.strip(), singer_name.strip()))
+                self._singers.add(singer_name.strip())
         return songs
     
     @staticmethod
     def process_song_data(song_data: Tuple[str, str, str]) -> Song:
         """Process a single song's data - designed for multithreading"""
-        link, song_name, artist_name = song_data
+        link, song_name, singer_name = song_data
         lyrics, chord_image = SongService.fetch_lyrics_and_chord_image(link)
-        return Song(song=song_name, artist=artist_name, lyrics=lyrics, chord_image=chord_image)
+        return Song(song=song_name, singer=singer_name, lyrics=lyrics, chord_image=chord_image)
     
-    @staticmethod
     def get_songs_list(
+        self,
         page: int = 1, 
-        song: str = None, 
-        artist: str = None, 
-        lyric: str = None, 
         max_workers: int = Config.MAX_WORKERS
     ) -> List[Song]:
         """Get list of songs with optional filters and multithreading"""
@@ -87,7 +86,7 @@ class SongService:
         # Collect all song data first
         for i in range(1, page + 1):
             html = fetch_page(f"{Config.BASE_URL}/lyric/page{i}")
-            all_song_data.extend(SongService.extract_songs(html))
+            all_song_data.extend(self.extract_songs(html))
         
         # Process songs in parallel
         songs_list = []
@@ -107,15 +106,16 @@ class SongService:
                     print(f"Error processing song: {e}")
                     continue
         
-        # Apply filters
-        if song:
-            song_lower = song.lower()
-            songs_list = [s for s in songs_list if song_lower in s.song.lower()]
-        if artist:
-            artist_lower = artist.lower()
-            songs_list = [s for s in songs_list if artist_lower in s.artist.lower()]
-        if lyric:
-            lyric_lower = lyric.lower()
-            songs_list = [s for s in songs_list if lyric_lower in s.lyrics.lower()]
-        
         return songs_list
+    
+    def update_cache(self):
+        self._songs_cache.clear()
+        self._singers.clear()
+        self._songs_cache = self.get_songs_list(253)
+        return {"message" : f"found {len(self._songs_cache)} songs"}
+
+    def get_singers(self) -> set[str]:
+        return set(self._singers)
+    
+    def get_songs(self) -> List[Song]:
+        return list(self._songs_cache)
