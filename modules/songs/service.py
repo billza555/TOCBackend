@@ -5,7 +5,7 @@ from core.patterns import (
     LYRICS_PATTERN, BR_PATTERN, NBSP_PATTERN, TAG_PATTERN,
     CHORD_BUTTON_PATTERN, CHORD_IMG_PATTERN, SECTION_PATTERN,
     COMMENT_SPLIT_PATTERN, A_TAG_PATTERN, HREF_PATTERN,
-    H3_PATTERN, H3_HEADER_PATTERN, WHITESPACE_PATTERN
+    H3_PATTERN, H3_HEADER_PATTERN, WHITESPACE_PATTERN, HITSONG_SECTION_PATTERN, VIEW_PATTERN
 )
 from shared.http_client import fetch_page
 from .models import Song
@@ -16,11 +16,16 @@ class SongService:
         self._singers: set[str] = set()
     
     @staticmethod
-    def fetch_lyrics_and_chord_image(song_url: str) -> Tuple[str, str]:
+    def fetch_lyrics_and_chord_image(song_url: str) -> Tuple[str, int, str]:
         """Extract lyrics and chord image URL from song page"""
         full_url = Config.BASE_URL + song_url
         html = fetch_page(full_url)
-        
+
+        views = 0
+        view_match = VIEW_PATTERN.search(html)
+        if view_match:
+            views = int(view_match.group(1))
+
         # Extract lyrics using pre-compiled patterns
         lyrics_match = LYRICS_PATTERN.search(html)
         lyrics = ""
@@ -40,17 +45,26 @@ class SongService:
             if img_match:
                 chord_image_url = Config.BASE_URL + img_match.group(1)
         
-        return lyrics, chord_image_url
+        return lyrics, views, chord_image_url
     
-    def extract_songs(self, html: str) -> List[Tuple[str, str, str]]:
+    def extract_songs(self, html: str, popular: bool = False) -> List[Tuple[str, str, str]]:
         """Extract song data from page HTML"""
         section_match = SECTION_PATTERN.search(html)
         if not section_match:
             return []
         
         section_html = section_match.group(1)
-        section_hit = COMMENT_SPLIT_PATTERN.split(section_html, maxsplit=1)[0]
-        a_tags = A_TAG_PATTERN.findall(section_hit)
+        a_tags = None
+        if popular:
+            section_b = COMMENT_SPLIT_PATTERN.split(section_html, maxsplit=1)[1]
+            hit_section_match = HITSONG_SECTION_PATTERN.search(section_b)
+            if not hit_section_match:
+                return []
+            hit_section_html = hit_section_match.group(1)
+            a_tags = A_TAG_PATTERN.findall(hit_section_html)
+        else:
+            section_hit_update = COMMENT_SPLIT_PATTERN.split(section_html, maxsplit=1)[0]
+            a_tags = A_TAG_PATTERN.findall(section_hit_update)
         
         songs = []
         for a_tag in a_tags:
@@ -72,13 +86,14 @@ class SongService:
     def process_song_data(song_data: Tuple[str, str, str]) -> Song:
         """Process a single song's data - designed for multithreading"""
         link, song_name, singer_name = song_data
-        lyrics, chord_image = SongService.fetch_lyrics_and_chord_image(link)
-        return Song(song=song_name, singer=singer_name, lyrics=lyrics, chord_image=chord_image)
+        lyrics, views, chord_image = SongService.fetch_lyrics_and_chord_image(link)
+        return Song(song=song_name, singer=singer_name, lyrics=lyrics, chord_image=chord_image, views=views)
     
     def get_songs_list(
         self,
         page: int = 1, 
-        max_workers: int = Config.MAX_WORKERS
+        max_workers: int = Config.MAX_WORKERS,
+        popular: bool = False
     ) -> List[Song]:
         """Get list of songs with optional filters and multithreading"""
         all_song_data = []
@@ -86,7 +101,7 @@ class SongService:
         # Collect all song data first
         for i in range(1, page + 1):
             html = fetch_page(f"{Config.BASE_URL}/lyric/page{i}")
-            all_song_data.extend(self.extract_songs(html))
+            all_song_data.extend(self.extract_songs(html, popular))
         
         # Process songs in parallel
         songs_list = []

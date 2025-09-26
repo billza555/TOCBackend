@@ -5,3 +5,4 @@ class Song(BaseModel):
     singer: str
     lyrics: str
     chord_image: str
+    views: int
