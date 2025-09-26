@@ -2,6 +2,6 @@ from pydantic import BaseModel
 
 class Song(BaseModel):
     song: str
-    artist: str
+    singer: str
     lyrics: str
     chord_image: str
