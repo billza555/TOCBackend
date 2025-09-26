@@ -10,13 +10,16 @@ router = APIRouter(prefix="/songs", tags=["songs"])
 
 song_service = SongService()
 
-def apply_filters(songs, song=None, singer=None, lyric=None):
+def apply_filters(songs, song=None, singer=None, lyric=None, min_views=None):
+    """Filter songs by song name, singer, lyrics, and minimum views"""
     if song:
         songs = [s for s in songs if song.lower() in s.song.lower()]
     if singer:
         songs = [s for s in songs if singer.lower() in s.singer.lower()]
     if lyric:
         songs = [s for s in songs if lyric.lower() in s.lyrics.lower()]
+    if min_views:
+        songs = [s for s in songs if getattr(s, "views", 0) >= min_views]
     return songs
 
 def paginate(items: list, page: int, page_size: int):
@@ -47,11 +50,17 @@ def get_songs(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     song: Optional[str] = Query(None, description="Filter by song name"),
     singer: Optional[str] = Query(None, description="Filter by singer name"),
-    lyric: Optional[str] = Query(None, description="Filter by lyrics content")
+    lyric: Optional[str] = Query(None, description="Filter by lyrics content"),
+    min_views: Optional[int] = Query(1, ge=1, description="Minimum views"),
+    popular: bool = False
 ):
     """Get list of songs with optional filters and pagination"""
-    songs_list = song_service.get_songs()
-    songs_list = apply_filters(songs_list, song, singer, lyric)
+    songs_list = []
+    if popular:
+        songs_list = song_service.get_songs_list(1, popular=True)
+    else:
+        songs_list = song_service.get_songs()
+    songs_list = apply_filters(songs_list, song, singer, lyric, min_views)
 
     total = len(songs_list)
     songs_page = paginate(songs_list, page, page_size)
@@ -71,18 +80,24 @@ def download_csv(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     song: Optional[str] = Query(None, description="Filter by song name"),
     singer: Optional[str] = Query(None, description="Filter by singer name"),
-    lyric: Optional[str] = Query(None, description="Filter by lyrics content")
+    lyric: Optional[str] = Query(None, description="Filter by lyrics content"),
+    min_views: Optional[int] = Query(1, ge=1, description="Minimum views"),
+    popular: bool = False
 ):
     """Download songs as CSV file"""
-    songs_list = song_service.get_songs()
-    songs_list = apply_filters(songs_list, song, singer, lyric)
+    songs_list = []
+    if popular:
+        songs_list = song_service.get_songs_list(1, popular=True)
+    else:
+        songs_list = song_service.get_songs()
+    songs_list = apply_filters(songs_list, song, singer, lyric, min_views)
     songs_page = paginate(songs_list, page, page_size)
     
     filename = "songs.csv"
     with open(filename, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
-        writer.writerow(["Song", "Singer", "Lyrics", "Chord Image URL"])
+        writer.writerow(["Song", "Singer", "Lyrics", "Chord Image URL", "Views"])
         for s in songs_page:
-            writer.writerow([s.song, s.singer, s.lyrics, s.chord_image])
+            writer.writerow([s.song, s.singer, s.lyrics, s.chord_image, getattr(s, "views", 0)])
     
     return FileResponse(filename, media_type="text/csv", filename=filename)
