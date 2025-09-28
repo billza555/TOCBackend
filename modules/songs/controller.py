@@ -54,7 +54,7 @@ async def get_songs(
     await maybe_trigger_crawl()
     REQUEST_COUNTER += 1
 
-    songs_list = song_service.get_songs_list(1, popular=True) if popular else song_service.get_songs()
+    songs_list = await song_service.get_songs_list(1, popular=True) if popular else song_service.get_songs()
     songs_list = apply_filters(songs_list, song, singer, lyric, min_views)
 
     total = len(songs_list)
