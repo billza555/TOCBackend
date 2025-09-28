@@ -1,6 +1,5 @@
-from .http_client import get_session, fetch_page
+from .http_client import fetch
 
 __all__ = [
-    "get_session",
-    "fetch_page"
+    "fetch",
 ]

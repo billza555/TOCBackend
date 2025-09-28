@@ -4,6 +4,8 @@ from fastapi.responses import FileResponse
 from typing import Optional
 from .service import SongService
 from .dto import SongListResponse, SingerListResponse
+import time
+import asyncio
 
 # Create router for song endpoints
 router = APIRouter(prefix="/songs", tags=["songs"])
@@ -28,8 +30,13 @@ def paginate(items: list, page: int, page_size: int):
     return items[start:end]
 
 @router.get("/crawler")
-def crawl_new_songs():
-    return song_service.update_cache()
+async def crawl_new_songs():
+    start_time = time.time()
+    res = await song_service.update_cache()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Crawling completed in {elapsed_time:.2f} seconds")
+    return res
 
 @router.get("/singer")
 def get_singers(
