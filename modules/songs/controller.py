@@ -1,19 +1,30 @@
-import csv
-from fastapi import APIRouter, Query
+import asyncio
+import time
+from fastapi import APIRouter, Query, BackgroundTasks
 from fastapi.responses import FileResponse
 from typing import Optional
-from .service import SongService
+from .service import AsyncSongService
 from .dto import SongListResponse, SingerListResponse
+import csv
 import time
-import asyncio
 
-# Create router for song endpoints
 router = APIRouter(prefix="/songs", tags=["songs"])
+song_service = AsyncSongService()
 
-song_service = SongService()
+# request counter (global for now)
+REQUEST_COUNTER = 1
+CRAWL_THRESHOLD = 1000
+LOCK = asyncio.Lock()
+
+async def maybe_trigger_crawl():
+    global REQUEST_COUNTER
+    async with LOCK:
+        if REQUEST_COUNTER % CRAWL_THRESHOLD == 0:
+            print("🚀 Threshold reached, refreshing cache...")
+            # run in background so requests don't block
+            asyncio.create_task(song_service.update_cache())
 
 def apply_filters(songs, song=None, singer=None, lyric=None, min_views=None):
-    """Filter songs by song name, singer, lyrics, and minimum views"""
     if song:
         songs = [s for s in songs if song.lower() in s.song.lower()]
     if singer:
@@ -29,74 +40,57 @@ def paginate(items: list, page: int, page_size: int):
     end = start + page_size
     return items[start:end]
 
-@router.get("/crawler")
-async def crawl_new_songs():
-    start_time = time.time()
-    res = await song_service.update_cache()
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"Crawling completed in {elapsed_time:.2f} seconds")
-    return res
-
-@router.get("/singer")
-def get_singers(
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),):
-    singers = list(song_service.get_singers())
-    singers_page = paginate(singers, page, page_size)
-    is_next = (page * page_size) < len(singers)
-    return SingerListResponse(
-        count=len(singers_page),
-        singers=singers_page,
-        is_next=is_next
-    )
-
 @router.get("", response_model=SongListResponse)
-def get_songs(
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    song: Optional[str] = Query(None, description="Filter by song name"),
-    singer: Optional[str] = Query(None, description="Filter by singer name"),
-    lyric: Optional[str] = Query(None, description="Filter by lyrics content"),
-    min_views: Optional[int] = Query(1, ge=1, description="Minimum views"),
+async def get_songs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    song: Optional[str] = None,
+    singer: Optional[str] = None,
+    lyric: Optional[str] = None,
+    min_views: Optional[int] = Query(1, ge=1),
     popular: bool = False
 ):
-    """Get list of songs with optional filters and pagination"""
-    songs_list = []
-    if popular:
-        songs_list = song_service.get_songs_list(1, popular=True)
-    else:
-        songs_list = song_service.get_songs()
+    global REQUEST_COUNTER
+    await maybe_trigger_crawl()
+    REQUEST_COUNTER += 1
+
+    songs_list = song_service.get_songs_list(1, popular=True) if popular else song_service.get_songs()
     songs_list = apply_filters(songs_list, song, singer, lyric, min_views)
 
     total = len(songs_list)
     songs_page = paginate(songs_list, page, page_size)
-
-    # มีหน้าถัดไปหรือไม่
     is_next = (page * page_size) < total
+    return SongListResponse(count=len(songs_page), songs=songs_page, is_next=is_next)
 
-    return SongListResponse(
-        count=len(songs_page),
-        songs=songs_page,
-        is_next=is_next
-    )
+@router.get("/singer")
+async def get_singers(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100)
+):
+    global REQUEST_COUNTER
+    await maybe_trigger_crawl()
+    REQUEST_COUNTER += 1
+
+    singers = list(song_service.get_singers())
+    singers_page = paginate(singers, page, page_size)
+    is_next = (page * page_size) < len(singers)
+    return SingerListResponse(count=len(singers_page), singers=singers_page, is_next=is_next)
 
 @router.get("/csv")
-def download_csv(
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    song: Optional[str] = Query(None, description="Filter by song name"),
-    singer: Optional[str] = Query(None, description="Filter by singer name"),
-    lyric: Optional[str] = Query(None, description="Filter by lyrics content"),
-    min_views: Optional[int] = Query(1, ge=1, description="Minimum views"),
+async def download_csv(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    song: Optional[str] = None,
+    singer: Optional[str] = None,
+    lyric: Optional[str] = None,
+    min_views: Optional[int] = Query(1, ge=1),
     popular: bool = False
 ):
-    """Download songs as CSV file"""
-    songs_list = []
-    if popular:
-        songs_list = song_service.get_songs_list(1, popular=True)
-    else:
-        songs_list = song_service.get_songs()
+    global REQUEST_COUNTER
+    await maybe_trigger_crawl()
+    REQUEST_COUNTER += 1
+
+    songs_list = song_service.get_songs_list(1, popular=True) if popular else song_service.get_songs()
     songs_list = apply_filters(songs_list, song, singer, lyric, min_views)
     songs_page = paginate(songs_list, page, page_size)
     
@@ -108,3 +102,11 @@ def download_csv(
             writer.writerow([s.song, s.singer, s.lyrics, s.chord_image, getattr(s, "views", 0)])
     
     return FileResponse(filename, media_type="text/csv", filename=filename)
+
+@router.get("/crawler")
+async def crawl_new_songs():
+    start_time = time.time()
+    res = await song_service.update_cache()
+    elapsed_time = time.time() - start_time
+    print(f"Crawling completed in {elapsed_time:.2f} seconds")
+    return res
