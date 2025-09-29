@@ -6,3 +6,4 @@ class Song(BaseModel):
     lyrics: str
     chord_image: str
     views: int
+    song_transcriber: str
