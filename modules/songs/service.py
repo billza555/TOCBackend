@@ -7,7 +7,7 @@ from core.patterns import (
     CHORD_BUTTON_PATTERN, CHORD_IMG_PATTERN, SECTION_PATTERN,
     COMMENT_SPLIT_PATTERN, A_TAG_PATTERN, HREF_PATTERN,
     H3_PATTERN, H3_HEADER_PATTERN, WHITESPACE_PATTERN, 
-    HITSONG_SECTION_PATTERN, VIEW_PATTERN
+    HITSONG_SECTION_PATTERN, VIEW_PATTERN, AVATAR_PATTERN
 )
 from .models import Song
 
@@ -156,7 +156,7 @@ class AsyncSongService:
                 }
             )
     
-    async def fetch_lyrics_and_chord_image(self, song_url: str, request_semaphore: asyncio.Semaphore = None, max_retries: int = 2) -> Tuple[str, int, str]:
+    async def fetch_lyrics(self, song_url: str, request_semaphore: asyncio.Semaphore = None, max_retries: int = 2) -> Tuple[str, int, str, str]:
         """Extract lyrics and chord image URL from song page - with optional semaphore control and retry logic"""
         
         async def controlled_fetch(url, retries=max_retries):
@@ -167,7 +167,7 @@ class AsyncSongService:
         
         # Clean and validate the song URL
         if not song_url or not song_url.strip():
-            return "", 0, ""
+            return "", 0, "", ""
             
         # Handle relative URLs
         if song_url.startswith('/'):
@@ -180,7 +180,7 @@ class AsyncSongService:
         html = await controlled_fetch(full_url, max_retries)
         
         if not html:
-            return "", 0, ""
+            return "", 0, "", ""
 
         views = 0
         view_match = VIEW_PATTERN.search(html)
@@ -189,6 +189,11 @@ class AsyncSongService:
                 views = int(view_match.group(1))
             except (ValueError, TypeError):
                 views = 0
+
+        song_transcriber = "" 
+        song_transcriber_match = AVATAR_PATTERN.search(html)
+        if song_transcriber_match:
+            song_transcriber = Config.BASE_URL + song_transcriber_match.group(1)
 
         # Extract lyrics using pre-compiled patterns
         lyrics_match = LYRICS_PATTERN.search(html)
@@ -210,7 +215,7 @@ class AsyncSongService:
                 if img_match:
                     chord_image_url = Config.BASE_URL + img_match.group(1)
         
-        return lyrics, views, chord_image_url
+        return lyrics, views, chord_image_url, song_transcriber
     
     def extract_songs(self, html: str, popular: bool = False) -> List[Tuple[str, str, str]]:
         """Extract song data from page HTML (kept synchronous as it's CPU-bound)"""
@@ -254,13 +259,14 @@ class AsyncSongService:
         # Retry logic for the entire song processing
         for attempt in range(max_retries + 1):
             try:
-                lyrics, views, chord_image = await self.fetch_lyrics_and_chord_image(link, request_semaphore, max_retries)
+                lyrics, views, chord_image, song_transcriber = await self.fetch_lyrics(link, request_semaphore, max_retries)
                 return Song(
                     song=song_name, 
                     singer=singer_name, 
                     lyrics=lyrics, 
                     chord_image=chord_image, 
-                    views=views
+                    views=views,
+                    song_transcriber=song_transcriber
                 )
             except asyncio.TimeoutError:
                 if attempt < max_retries:
@@ -281,7 +287,8 @@ class AsyncSongService:
                         singer=singer_name, 
                         lyrics="", 
                         chord_image="", 
-                        views=0
+                        views=0,
+                        song_transcriber=""
                     )
             except Exception as e:
                 if attempt < max_retries:
@@ -302,7 +309,8 @@ class AsyncSongService:
                         singer=singer_name, 
                         lyrics="", 
                         chord_image="", 
-                        views=0
+                        views=0,
+                        song_transcriber=""
                     )
     
     async def get_songs_list(

@@ -2,6 +2,7 @@ import re
 
 # Pre-compiled regex patterns for better performance
 VIEW_PATTERN = re.compile(r'ดู\s+([\d,]+)\s+ครั้ง')
+AVATAR_PATTERN = re.compile(r'<img[^>]+src="([^"]+)"[^>]*class="postpic"', re.IGNORECASE)
 LYRICS_PATTERN = re.compile(r'<div class="lyric-content" id="lyric">.*?<pre[^>]*>(.*?)</pre>', re.S)
 BR_PATTERN = re.compile(r'<br\s*/?>')
 NBSP_PATTERN = re.compile(r'&nbsp;')
