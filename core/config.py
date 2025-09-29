@@ -7,7 +7,7 @@ class Config:
     # Threading Configuration
     MAX_WORKERS = 5
     REQUEST_TIMEOUT = 10
-    SONG_PROCESSING_TIMEOUT = 30
+    SONG_PROCESSING_TIMEOUT = 60
     
     # HTTP Configuration
     USER_AGENT = "Mozilla/5.0 (compatible; MusicScraper/1.0)"

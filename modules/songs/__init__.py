@@ -1,11 +1,11 @@
 from .controller import router
-from .service import SongService
+from .service import AsyncSongService
 from .models import Song
 from .dto import SongListResponse, SongQueryParams
 
 __all__ = [
     "router",
-    "SongService", 
+    "AsyncSongService", 
     "Song",
     "SongListResponse",
     "SongQueryParams"
