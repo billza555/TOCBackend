@@ -77,30 +77,22 @@ async def get_singers(
     return SingerListResponse(count=len(singers_page), singers=singers_page, is_next=is_next)
 
 @router.get("/csv")
-async def download_csv(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    song: Optional[str] = None,
-    singer: Optional[str] = None,
-    lyric: Optional[str] = None,
-    min_views: Optional[int] = Query(1, ge=1),
-    popular: bool = False
-):
+async def download_csv():
     global REQUEST_COUNTER
     await maybe_trigger_crawl()
     REQUEST_COUNTER += 1
 
-    songs_list = await song_service.get_songs_list(1, popular=True) if popular else song_service.get_songs()
-    songs_list = apply_filters(songs_list, song, singer, lyric, min_views)
-    songs_page = paginate(songs_list, page, page_size)
-    
+    songs_popular_list = await song_service.get_songs_list(1, popular=True)
+    songs_list = song_service.get_songs()
+    songs = songs_popular_list + songs_list
+
     filename = "songs.csv"
     with open(filename, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
         writer.writerow(["Song", "Singer", "Lyrics", "Chord Image URL", "Views"])
-        for s in songs_page:
+        for s in songs:
             writer.writerow([s.song, s.singer, s.lyrics, s.chord_image, getattr(s, "views", 0)])
-    
+
     return FileResponse(filename, media_type="text/csv", filename=filename)
 
 @router.get("/crawler")
